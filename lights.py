@@ -39,7 +39,7 @@ EXPECTED_TIP = "Select 0 to find all available bulbs. Select any number to look 
 DURATION_TIP = "The time (in ms) that a color transition takes"
 FOLLOW_DESKTOP_TIP = "Make your bulbs' color match your desktop"
 EXPECTED_BULBS = 2
-DURATION_DEFAULT = 200
+DURATION_DEFAULT = 600
 CONFIG = "lights.ini"
 PICKLE = "lifxList.pkl"
 SCENE1_C = "scene1_c.pkl"
@@ -682,7 +682,10 @@ def followDesktop():
 
     while (is_follow):
      # take a screenshot
-     image = ImageGrab.grab(bbox=box)
+     try:
+         image = ImageGrab.grab(bbox=box)
+     except Exception as e:
+         print ("Ignoring error:", str(e))
 
      # calculate average R, G, and B values
      #start = time.clock()
@@ -711,8 +714,9 @@ def followDesktop():
          print ("Ignoring error:", str(e))
 
      # wait to avoid spamming the lights and causing jitters
-     base_delay = 0.002 # wait at least this long for the light firmware
-     time.sleep(base_delay + duration_secs) # add additional time for transition
+     #base_delay = 0.002 # wait at least this long for the light firmware
+     #time.sleep(base_delay + duration_secs) # add additional time for transition
+     time.sleep(0.2)
      #print("Exiting loop")
 
 def iswindows():
@@ -739,9 +743,14 @@ def followDesktopPressed(name):
 
         # Convert RGB to BGR
         im = open_cv_image[:, :, ::-1].copy()
-        cv2.namedWindow("Screenshot", cv2.WINDOW_FULLSCREEN)
+        screen_width = app.winfo_screenwidth()
+        screen_height = app.winfo_screenheight()
+        imS = cv2.resize(im, (int(screen_width*0.9), int(screen_height*0.9)))
+        #imS = cv2.resize(im, (screen_width, screen_height))
+        cv2.namedWindow("Screenshot", cv2.WINDOW_AUTOSIZE)
+        cv2.imshow("Screenshot", imS)
         cv2.moveWindow("Screenshot", 0, 0)
-        r = cv2.selectROI("Screenshot", im, False)
+        r = cv2.selectROI("Screenshot", imS, False)
         #cv2.waitKey()
         print("r is",r)
         if not any(r):
