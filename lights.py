@@ -20,6 +20,7 @@ import appJar as aJ
 import numpy as np
 import cv2
 from scipy.stats import itemfreq
+from mss import mss
 
 myos = system()
 if (myos == 'Windows') or (myos == 'Darwin'):
@@ -40,7 +41,7 @@ TRANSITION_TIME_TIP = "The time (in ms) that a color transition takes"
 FOLLOW_DESKTOP_TIP = "Make your bulbs' color match your desktop"
 DESKTOP_MODE_TIP = "Select between following the whole desktop screen or just a small portion of it (useful for letterbox movies)"
 EXPECTED_BULBS = 2
-TRANSITION_TIME_DEFAULT = 600
+TRANSITION_TIME_DEFAULT = 400
 CONFIG = "lights.ini"
 PICKLE = "lifxList.pkl"
 SCENE1_C = "scene1_c.pkl"
@@ -671,6 +672,7 @@ def followDesktop():
     print("screen_width:", screen_width, " screen_height:", screen_height)
     print("Follow:", is_follow)
     duration = app.getEntry(TRANSITION_TIME)
+    is_evening = app.getCheckBox("Evening Mode")
     print("r:", r)
     print("Starting Loop")
 
@@ -684,29 +686,33 @@ def followDesktop():
         app.hideEntry(TRANSITION_TIME)
         app.hideOptionBox(DESKTOP_MODE)
         app.showLabel(REGION_COLOR)
+        app.hideCheckBox("Evening Mode")
 
-    start = None
+    sct = mss()
     while (is_follow):
         start = time.time()
-
         try:
-            image = ImageGrab.grab(bbox=box)
+            # fast screenshot with mss module
+            sct_img = sct.grab(box)
+            image = Image.frombytes('RGB', sct_img.size, sct_img.rgb)
         except Exception as e:
             print ("Ignoring error:", str(e))
 
         try:
-            pixels = np.array(image.convert('RGB'), dtype=np.float32)
+            # downsample to 1/10th and calculate average RGB color
+            pixels = np.array(image, dtype=np.float32)
             pixels = pixels[::10,::10,:]
             pixels = np.transpose(pixels)
             dominant_color = [np.mean(channel) for channel in pixels]
 
+            # get HSVK color from RGB color
+            # during evenings, kelvin is 3500 (default value returned above)
+            # during the daytime, saturated colors are still 3500 K,
+            # but the whiter the color, the cooler, up to 5000 K
             (h, s, v, k) = lifxlan.RGBtoHSBK(dominant_color)
-            k = int(5000 - (s/65535 * 1500))
+            if not is_evening:
+                k = int(5000 - (s/65535 * 1500))
             bulbHSBK = [h, s, v, k]
-
-            # c = Color(rgb=dominant_color)
-            # app.setLabelBg(REGION_COLOR, c.hex_l)
-            # app.setLabel(REGION_COLOR, "Dominant Desktop Color    RGB: {} {} {}    HSVK: {} {} {} {}".format(round(rgb1[0], 2), round(rgb1[1], 2), round(rgb1[2], 2), h, s, v, k))
 
             try:
                 if gSelectAll:
@@ -722,8 +728,16 @@ def followDesktop():
                 print ("Ignoring error: ", str(e))
         except Exception as e:
             print("Ignoring error: ", str(e))
-        #print(time.time()-start)
 
+        # rate limit to prevent from spamming bulbs
+        # the theoretical max speed that the bulbs can handle is one packet
+        # every 0.05 seconds, but empirically I found that 0.1 sec looked better
+        max_speed_sec = 0.1
+        elapsed_time = time.time() - start
+        wait_time = max_speed_sec - elapsed_time
+        if wait_time > 0:
+            sleep(wait_time)
+        #print(elapsed_time, time.time()-start)
     print("Exiting loop")
 
 def followDesktopPressed(name):
@@ -733,6 +747,7 @@ def followDesktopPressed(name):
     is_follow = app.getCheckBox("Follow Desktop")
     app.showEntry(TRANSITION_TIME)
     app.showOptionBox(DESKTOP_MODE)
+    app.showCheckBox("Evening Mode")
     app.hideLabel(REGION_COLOR)
 
     if (is_follow):
@@ -1062,8 +1077,9 @@ app.addLabelEntry(TRANSITION_TIME,0,2)
 app.setEntryWidth(TRANSITION_TIME, 6)
 app.setEntry(TRANSITION_TIME, TRANSITION_TIME_DEFAULT)
 #app.startLabelFrame("Region Color", 0, 3)
+app.addCheckBox("Evening Mode",0,3)
 app.setSticky("ew")
-app.addLabel(REGION_COLOR, "",1,0,3)
+app.addLabel(REGION_COLOR, "",1,0,4)
 app.setLabel(REGION_COLOR, " Desktop Region's Dominant Color")
 app.setLabelHeight(REGION_COLOR, 1)
 #app.setLabelWidth(REGION_COLOR, 5)
