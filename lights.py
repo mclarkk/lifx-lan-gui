@@ -19,6 +19,7 @@ from PIL import Image
 import appJar as aJ
 import numpy as np
 import cv2
+from scipy import stats
 from scipy.stats import itemfreq
 from mss import mss
 
@@ -661,6 +662,14 @@ def rainbow(lan, duration_secs=0.5, smooth=False):
             lan.set_color_all_lights(color, transition_time_ms, rapid)
             sleep(duration_secs)
 
+#@vectorize(["float32(float32, float32)"], target='cuda')
+#@numba.autojit
+#@guvectorize([(float32[:], float32[:])], '(n)->(n)')
+def roundColor(pixel):
+    [red, green, blue] = pixel
+    return [min(round(red, -1), 255.0), min(round(green, -1), 255.0), min(round(blue, -1), 255.0)]
+
+
 def followDesktop():
     global gSelectAll
     global lan
@@ -702,8 +711,24 @@ def followDesktop():
             # downsample to 1/10th and calculate average RGB color
             pixels = np.array(image, dtype=np.float32)
             pixels = pixels[::10,::10,:]
+
+            #pixels = pixels.reshape(-1, pixels.shape[-1])
+            #print(pixels)
+            # p = Pool(10)
+            # rounded_pixels = []
+            # for row in pixels:
+            #     result = p.map(roundColor, row)
+                # rounded_pixels = result
+                #print(result[:5])
+            #print(pixels)
+            #pixels = roundColor(pixels)
+            #pixels = np.array([[min(round(red, -1), 255), min(round(green, -1), 255), min(round(blue, -1), 255)] for [red, green, blue] in pixels])
+            # dominant_color = stats.mode(pixels)[0][0]
             pixels = np.transpose(pixels)
             dominant_color = [np.mean(channel) for channel in pixels]
+
+
+
 
             # get HSVK color from RGB color
             # during evenings, kelvin is 3500 (default value returned above)
@@ -712,13 +737,16 @@ def followDesktop():
             (h, s, v, k) = lifxlan.RGBtoHSBK(dominant_color)
             if not is_evening:
                 k = int(5000 - (s/65535 * 1500))
-            bulbHSBK = [h, s, v, k]
+            else:
+                k = 3500
+            bulbHSVK = [h, s, v, k]
+            #print(bulbHSVK)
 
             try:
                 if gSelectAll:
-                    lan.set_color_all_lights(bulbHSBK, duration=duration, rapid=True)
+                    lan.set_color_all_lights(bulbHSVK, duration=duration, rapid=True)
                 elif selected_bulb:
-                    selected_bulb.set_color(bulbHSBK, duration=duration, rapid=True)
+                    selected_bulb.set_color(bulbHSVK, duration=duration, rapid=True)
                 else:
                     app.errorBox("Error", "Error. No bulb was selected. Please select a bulb from the pull-down menu (or tick the 'Select All' checkbox) and try again.")
                     app.setCheckBox("Follow Desktop", False)
